@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spec Kit Superpowers Bridge"
+  short_description: "Use Spec Kit with Superpowers, Codex, and Hermes"
+  default_prompt: "Use $spec-kit-superpowers-bridge to plan and execute this feature with Spec Kit artifacts, Superpowers discipline, and Codex/Hermes delegation."
