@@ -43,7 +43,7 @@ $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$skillName-stage-$([
 $stagedSkill = Join-Path $stagingRoot $skillName
 $backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
 $hadTarget = Test-Path -LiteralPath $target
-$swapped = $false
+$backupCreated = $false
 
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Codex installer not found: $installer" }
 if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) { throw "Codex validator not found: $validator" }
@@ -56,20 +56,33 @@ try {
   & $python $validator $stagedSkill
   if ($LASTEXITCODE -ne 0) { throw "Staged validation failed with exit code $LASTEXITCODE" }
 
-  if ($hadTarget) { Move-Item -LiteralPath $target -Destination $backup -ErrorAction Stop }
+  if ($hadTarget) {
+    Move-Item -LiteralPath $target -Destination $backup -ErrorAction Stop
+    $backupCreated = $true
+  }
   Move-Item -LiteralPath $stagedSkill -Destination $target -ErrorAction Stop
   & $python $validator $target
   if ($LASTEXITCODE -ne 0) { throw "Final validation failed with exit code $LASTEXITCODE" }
-  $swapped = $true
-  Write-Host "Updated $target. Rollback copy retained at $backup"
+  if ($backupCreated) {
+    Write-Host "Updated $target. Rollback copy retained at $backup"
+  } else {
+    Write-Host "Fresh installation complete; no previous copy existed at $target"
+  }
 }
 catch {
   # Roll back every unsuccessful swap or final-validation failure.
-  if (-not $swapped -and (Test-Path -LiteralPath $target)) {
+  if ($backupCreated -and (Test-Path -LiteralPath $target)) {
     Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
   }
-  if ($hadTarget -and (Test-Path -LiteralPath $backup)) {
+  if ($backupCreated -and (Test-Path -LiteralPath $backup)) {
     Move-Item -LiteralPath $backup -Destination $target -ErrorAction Stop
+  } elseif (-not $hadTarget -and (Test-Path -LiteralPath $target)) {
+    # A fresh install has no previous copy; only its partial replacement may be removed.
+    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  if ($hadTarget -and -not $backupCreated -and (Test-Path -LiteralPath $target)) {
+    # The backup move failed, so the original installation remains intact.
+    Write-Warning "Update stopped before backup; original installation remains at $target"
   }
   throw
 }
