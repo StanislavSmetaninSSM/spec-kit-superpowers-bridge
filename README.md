@@ -35,19 +35,49 @@ $skillName = 'spec-kit-superpowers-bridge'
 $repository = 'StanislavSmetaninSSM/spec-kit-superpowers-bridge'
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $skillsRoot = Join-Path $codexHome 'skills'
+$target = Join-Path $skillsRoot $skillName
+$transactionRoot = Join-Path $skillsRoot ('.spec-kit-superpowers-bridge-update-' + [guid]::NewGuid())
+$stagingRoot = Join-Path $transactionRoot 'staging'
+$stagedSkill = Join-Path $stagingRoot $skillName
+$backup = Join-Path $transactionRoot 'backup'
+$hadTarget = Test-Path -LiteralPath $target
 $installer = Join-Path $skillsRoot '.system/skill-installer/scripts/install-skill-from-github.py'
 $validator = Join-Path $skillsRoot '.system/skill-creator/scripts/quick_validate.py'
 $python = (Get-Command python -ErrorAction Stop).Source
-$target = Join-Path $skillsRoot $skillName
-$stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$skillName-stage-$([guid]::NewGuid().ToString('N'))"
-$stagedSkill = Join-Path $stagingRoot $skillName
-$backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
-$hadTarget = Test-Path -LiteralPath $target
-$backupCreated = $false
 
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Codex installer not found: $installer" }
 if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) { throw "Codex validator not found: $validator" }
-New-Item -ItemType Directory -LiteralPath $stagingRoot -ErrorAction Stop | Out-Null
+New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
+if (Test-Path -LiteralPath $transactionRoot) { throw "Transaction path already exists: $transactionRoot" }
+New-Item -ItemType Directory -Path $transactionRoot | Out-Null
+
+function Write-ManualRecovery {
+  Write-Warning "Manual recovery: after inspecting '$target', move '$backup' to '$target'."
+}
+
+function Restore-Backup {
+  if (-not (Test-Path -LiteralPath $backup)) { return }
+  if (Test-Path -LiteralPath $target) {
+    try {
+      Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+    } catch {
+      Write-Warning "Rollback could not remove failed replacement '$target': $($_.Exception.Message)"
+      Write-ManualRecovery
+      return
+    }
+    if (Test-Path -LiteralPath $target) {
+      Write-Warning "Rollback left the failed replacement at '$target'."
+      Write-ManualRecovery
+      return
+    }
+  }
+  try {
+    Move-Item -LiteralPath $backup -Destination $target -ErrorAction Stop
+  } catch {
+    Write-Warning "Rollback could not restore backup '$backup': $($_.Exception.Message)"
+    Write-ManualRecovery
+  }
+}
 
 try {
   # The current install remains untouched through download and staged validation.
@@ -56,40 +86,31 @@ try {
   & $python $validator $stagedSkill
   if ($LASTEXITCODE -ne 0) { throw "Staged validation failed with exit code $LASTEXITCODE" }
 
-  if ($hadTarget) {
+  if (Test-Path -LiteralPath $target) {
     Move-Item -LiteralPath $target -Destination $backup -ErrorAction Stop
-    $backupCreated = $true
   }
   Move-Item -LiteralPath $stagedSkill -Destination $target -ErrorAction Stop
   & $python $validator $target
   if ($LASTEXITCODE -ne 0) { throw "Final validation failed with exit code $LASTEXITCODE" }
-  if ($backupCreated) {
+  if (Test-Path -LiteralPath $backup) {
     Write-Host "Updated $target. Rollback copy retained at $backup"
   } else {
-    Write-Host "Fresh installation complete; no previous copy existed at $target"
+    Write-Host "Fresh installation complete. Transaction directory retained at $transactionRoot"
   }
 }
 catch {
-  # Roll back every unsuccessful swap or final-validation failure.
-  if ($backupCreated -and (Test-Path -LiteralPath $target)) {
-    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
-  }
-  if ($backupCreated -and (Test-Path -LiteralPath $backup)) {
-    Move-Item -LiteralPath $backup -Destination $target -ErrorAction Stop
+  if (Test-Path -LiteralPath $backup) {
+    Restore-Backup
   } elseif (-not $hadTarget -and (Test-Path -LiteralPath $target)) {
-    # A fresh install has no previous copy; only its partial replacement may be removed.
-    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
-  }
-  if ($hadTarget -and -not $backupCreated -and (Test-Path -LiteralPath $target)) {
-    # The backup move failed, so the original installation remains intact.
-    Write-Warning "Update stopped before backup; original installation remains at $target"
+    try {
+      Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+    } catch {
+      Write-Warning "Fresh installation failed; partial target could not be removed from '$target': $($_.Exception.Message)"
+    }
+  } elseif ($hadTarget -and (Test-Path -LiteralPath $target)) {
+    Write-Warning "Update stopped before a backup was created; the original installation remains at '$target'."
   }
   throw
-}
-finally {
-  if (Test-Path -LiteralPath $stagingRoot) {
-    Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
-  }
 }
 ```
 
