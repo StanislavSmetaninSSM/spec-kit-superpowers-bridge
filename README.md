@@ -52,7 +52,7 @@ if (Test-Path -LiteralPath $transactionRoot) { throw "Transaction path already e
 New-Item -ItemType Directory -Path $transactionRoot | Out-Null
 
 function Write-ManualRecovery {
-  Write-Warning "Manual recovery: after inspecting '$target', move '$backup' to '$target'."
+  Write-Warning "Manual recovery required. Preserve the backup at '$backup'. Move or remove the failed target at '$target'. Confirm that the target path no longer exists. Only then move the backup to '$target' and run the validator at '$validator' against the restored target."
 }
 
 function Restore-Backup {
