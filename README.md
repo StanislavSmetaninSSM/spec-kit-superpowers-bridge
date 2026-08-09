@@ -13,19 +13,74 @@ Install and configure the components separately:
 
 ## Install
 
-After this repository has been published, use Codex's GitHub skill installer with the repository owner substituted for `<GITHUB_OWNER>`:
+Install from the published bridge repository:
 
 ```powershell
 python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py `
-  --repo <GITHUB_OWNER>/spec-kit-superpowers-bridge-public `
+  --repo StanislavSmetaninSSM/spec-kit-superpowers-bridge `
   --path spec-kit-superpowers-bridge
 ```
 
 Restart Codex if the installed skill does not appear. Invoke it as `$spec-kit-superpowers-bridge`, or let Codex select it when the request matches its description.
 
+Published source: <https://github.com/StanislavSmetaninSSM/spec-kit-superpowers-bridge>
+
 ## Safe updates and rollback
 
-The installer intentionally refuses to overwrite an existing skill. Before updating, back up the installed `spec-kit-superpowers-bridge` directory, install the new revision, and verify it. To roll back, remove the new installed directory and restore that backup directory. Do not overwrite the only known-good copy in place.
+The installer intentionally refuses to overwrite an existing skill. Use this fail-fast PowerShell procedure to download and validate a replacement before touching the current installation. It leaves the unique backup in place after success so you can roll back deliberately.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$skillName = 'spec-kit-superpowers-bridge'
+$repository = 'StanislavSmetaninSSM/spec-kit-superpowers-bridge'
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+$skillsRoot = Join-Path $codexHome 'skills'
+$installer = Join-Path $skillsRoot '.system/skill-installer/scripts/install-skill-from-github.py'
+$validator = Join-Path $skillsRoot '.system/skill-creator/scripts/quick_validate.py'
+$python = (Get-Command python -ErrorAction Stop).Source
+$target = Join-Path $skillsRoot $skillName
+$stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$skillName-stage-$([guid]::NewGuid().ToString('N'))"
+$stagedSkill = Join-Path $stagingRoot $skillName
+$backup = "$target.backup-$([guid]::NewGuid().ToString('N'))"
+$hadTarget = Test-Path -LiteralPath $target
+$swapped = $false
+
+if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Codex installer not found: $installer" }
+if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) { throw "Codex validator not found: $validator" }
+New-Item -ItemType Directory -LiteralPath $stagingRoot -ErrorAction Stop | Out-Null
+
+try {
+  # The current install remains untouched through download and staged validation.
+  & $python $installer --repo $repository --path $skillName --dest $stagingRoot
+  if ($LASTEXITCODE -ne 0) { throw "Installer failed with exit code $LASTEXITCODE" }
+  & $python $validator $stagedSkill
+  if ($LASTEXITCODE -ne 0) { throw "Staged validation failed with exit code $LASTEXITCODE" }
+
+  if ($hadTarget) { Move-Item -LiteralPath $target -Destination $backup -ErrorAction Stop }
+  Move-Item -LiteralPath $stagedSkill -Destination $target -ErrorAction Stop
+  & $python $validator $target
+  if ($LASTEXITCODE -ne 0) { throw "Final validation failed with exit code $LASTEXITCODE" }
+  $swapped = $true
+  Write-Host "Updated $target. Rollback copy retained at $backup"
+}
+catch {
+  # Roll back every unsuccessful swap or final-validation failure.
+  if (-not $swapped -and (Test-Path -LiteralPath $target)) {
+    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  if ($hadTarget -and (Test-Path -LiteralPath $backup)) {
+    Move-Item -LiteralPath $backup -Destination $target -ErrorAction Stop
+  }
+  throw
+}
+finally {
+  if (Test-Path -LiteralPath $stagingRoot) {
+    Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+```
+
+To roll back a successful update later, remove the updated target only after confirming the unique backup still exists, then move that backup directory back to the target path and run `quick_validate.py` on the restored target.
 
 ## Scope
 
