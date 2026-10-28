@@ -1,6 +1,6 @@
 ---
 name: spec-kit-superpowers-bridge
-description: Use when coding work should combine GitHub Spec Kit, Superpowers, Codex CLI, Hermes Agent, .specify artifacts, speckit commands, or Hermes codex-delegate delegation.
+description: Use when coding work should combine GitHub Spec Kit, Superpowers, Codex CLI, Hermes Agent, Arena Agent Mode, .specify artifacts, speckit commands, or Hermes codex-delegate delegation.
 ---
 
 # Spec Kit Superpowers Bridge
@@ -35,6 +35,10 @@ Do not use this skill for:
 - Tiny one-file fixes where a full spec would be overhead.
 - Pure Q&A about Spec Kit with no local workflow impact.
 - A repository where the user has not approved adding `.specify/` files.
+
+## Arena Agent Mode
+
+When working in Arena, read `references/arena.md` first. It adapts this workflow to Arena without requiring Codex, Hermes, or native skill invocation.
 
 ## Installation and Project Setup
 

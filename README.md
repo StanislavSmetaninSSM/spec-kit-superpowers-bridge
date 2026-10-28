@@ -119,3 +119,17 @@ To roll back a successful update later, remove the updated target only after con
 ## Scope
 
 The payload preserves the established bridge workflow: Spec Kit is the durable planning layer, Superpowers supplies engineering discipline, Codex performs repository work, and Hermes remains an optional orchestration boundary. Review the skill and all upstream dependencies before using them in a project.
+
+## Arena Agent Mode
+
+Arena can use this bridge as **repository-local instructions**. This does not assume a global Arena skill installer or a special skill invocation mechanism. In Arena, ask the agent to install this bridge into the target repository; the agent can clone this repository, inspect it, and run the following from the clone (Python 3 required):
+
+```bash
+python3 arena/install.py /absolute/path/to/target-repository
+```
+
+Alternatively, when this repository is already checked out, run the same command from its root. The target must be the root of an existing Git working tree. The installer copies the skill into `.agents/skills/spec-kit-superpowers-bridge/` and adds a marked instruction to the target's `AGENTS.md`. It preserves existing instructions, is repeatable for the same version, and stops rather than overwriting a different installation or edited bridge block. The resulting files are project changes: review them and commit only if desired. The agent should read the installed `SKILL.md` and `references/arena.md` immediately after installation; future Arena sessions should follow the repository's `AGENTS.md` instructions.
+
+To update, review and manually remove or replace the installed skill and marked `AGENTS.md` block before rerunning the installer; back up local changes first. To uninstall, remove that skill directory and only the block between `<!-- spec-kit-superpowers-bridge:arena:start -->` and `<!-- spec-kit-superpowers-bridge:arena:end -->` from `AGENTS.md` (delete the file only if it is otherwise empty).
+
+This installs only the bridge instructions, not Spec Kit, Superpowers, Codex, or Hermes. Arena uses available project tools or the equivalent engineering practices described in the adaptation. Spec Kit initialization and additional dependencies remain separate, permission-sensitive actions.
