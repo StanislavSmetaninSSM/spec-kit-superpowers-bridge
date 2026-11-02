@@ -1,135 +1,45 @@
 # Spec Kit Superpowers Bridge
 
-This community-authored Codex skill connects [GitHub Spec Kit](https://github.com/github/spec-kit), [Superpowers](https://github.com/obra/superpowers), Codex, and conditional Hermes delegation. It is an independent integration, not an official release of any upstream project.
+This community-authored skill connects [GitHub Spec Kit](https://github.com/github/spec-kit) and [Superpowers](https://github.com/obra/superpowers). Spec Kit owns requirements, decisions, and task tracking; Superpowers supplies the engineering methods. This is an independent integration, not an official release of either upstream project.
 
-## Prerequisites
+The shared skill is application-independent. It uses the current agent's available capabilities without selecting an application, model, operating system, or delegation tool. Optional application adapters live outside the shared skill directory.
 
-Install and configure the components separately:
+## Use the shared skill
 
-- Codex with local skill support; see the official [Codex skills documentation](https://developers.openai.com/codex/skills/).
-- GitHub Spec Kit and its `specify` CLI. The bridge uses project-local `.specify/` artifacts when the project has them.
-- Superpowers, so its engineering-method skills are available to the same workflow.
-- Hermes only when using its `codex-delegate` orchestration path; Codex direct mode does not require Hermes.
+Install and configure Spec Kit and Superpowers separately for your environment. The bridge does not install dependencies or grant permission to initialize a project, publish changes, or switch agent applications.
 
-## Install
+Review this repository, then install the `spec-kit-superpowers-bridge/` directory through your environment's supported skill mechanism, or read its [SKILL.md](spec-kit-superpowers-bridge/SKILL.md) as instructions when file-based skills are unavailable. Follow the environment's discovery and invocation rules. The optional `agents/openai.yaml` file supplies UI metadata for compatible hosts; it is not required to follow the methodology.
 
-Install from the published bridge repository:
+The bridge keeps one active feature and one canonical set of `spec.md`, `plan.md`, and `tasks.md` artifacts. It maps the actual available Spec Kit phases to applicable Superpowers skills, preserves concrete prior approvals, and requires evidence for completion. Under the workflow encoded by this skill, brainstorming requires Spec Kit even for tiny, bounded, or investigative tasks; ordinary questions do not initiate development.
 
-```powershell
-python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py `
-  --repo StanislavSmetaninSSM/spec-kit-superpowers-bridge `
-  --path spec-kit-superpowers-bridge
-```
+Unavailable tools must be reported accurately. Reading instructions or applying equivalent practices does not establish that an unavailable skill or command ran, or that a required independent review was completed.
 
-Restart Codex if the installed skill does not appear. Invoke it as `$spec-kit-superpowers-bridge`, or let Codex select it when the request matches its description.
+## Optional Arena adapter
 
-Published source: <https://github.com/StanislavSmetaninSSM/spec-kit-superpowers-bridge>
-
-## Safe updates and rollback
-
-The installer intentionally refuses to overwrite an existing skill. Use this fail-fast PowerShell procedure to download and validate a replacement before touching the current installation. It leaves the unique backup in place after success so you can roll back deliberately.
-
-```powershell
-$ErrorActionPreference = 'Stop'
-$skillName = 'spec-kit-superpowers-bridge'
-$repository = 'StanislavSmetaninSSM/spec-kit-superpowers-bridge'
-$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-$skillsRoot = Join-Path $codexHome 'skills'
-$target = Join-Path $skillsRoot $skillName
-$transactionRoot = Join-Path $skillsRoot ('.spec-kit-superpowers-bridge-update-' + [guid]::NewGuid())
-$stagingRoot = Join-Path $transactionRoot 'staging'
-$stagedSkill = Join-Path $stagingRoot $skillName
-$backup = Join-Path $transactionRoot 'backup'
-$hadTarget = Test-Path -LiteralPath $target
-$installer = Join-Path $skillsRoot '.system/skill-installer/scripts/install-skill-from-github.py'
-$validator = Join-Path $skillsRoot '.system/skill-creator/scripts/quick_validate.py'
-$python = (Get-Command python -ErrorAction Stop).Source
-
-if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Codex installer not found: $installer" }
-if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) { throw "Codex validator not found: $validator" }
-New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
-if (Test-Path -LiteralPath $transactionRoot) { throw "Transaction path already exists: $transactionRoot" }
-New-Item -ItemType Directory -Path $transactionRoot | Out-Null
-
-function Write-ManualRecovery {
-  Write-Warning "Manual recovery required. Preserve the backup at '$backup'. Move or remove the failed target at '$target'. Confirm that the target path no longer exists. Only then move the backup to '$target' and run the validator at '$validator' against the restored target."
-}
-
-function Restore-Backup {
-  if (-not (Test-Path -LiteralPath $backup)) { return }
-  if (Test-Path -LiteralPath $target) {
-    try {
-      Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
-    } catch {
-      Write-Warning "Rollback could not remove failed replacement '$target': $($_.Exception.Message)"
-      Write-ManualRecovery
-      return
-    }
-    if (Test-Path -LiteralPath $target) {
-      Write-Warning "Rollback left the failed replacement at '$target'."
-      Write-ManualRecovery
-      return
-    }
-  }
-  try {
-    Move-Item -LiteralPath $backup -Destination $target -ErrorAction Stop
-  } catch {
-    Write-Warning "Rollback could not restore backup '$backup': $($_.Exception.Message)"
-    Write-ManualRecovery
-  }
-}
-
-try {
-  # The current install remains untouched through download and staged validation.
-  & $python $installer --repo $repository --path $skillName --dest $stagingRoot
-  if ($LASTEXITCODE -ne 0) { throw "Installer failed with exit code $LASTEXITCODE" }
-  & $python $validator $stagedSkill
-  if ($LASTEXITCODE -ne 0) { throw "Staged validation failed with exit code $LASTEXITCODE" }
-
-  if (Test-Path -LiteralPath $target) {
-    Move-Item -LiteralPath $target -Destination $backup -ErrorAction Stop
-  }
-  Move-Item -LiteralPath $stagedSkill -Destination $target -ErrorAction Stop
-  & $python $validator $target
-  if ($LASTEXITCODE -ne 0) { throw "Final validation failed with exit code $LASTEXITCODE" }
-  if (Test-Path -LiteralPath $backup) {
-    Write-Host "Updated $target. Rollback copy retained at $backup"
-  } else {
-    Write-Host "Fresh installation complete. Transaction directory retained at $transactionRoot"
-  }
-}
-catch {
-  if (Test-Path -LiteralPath $backup) {
-    Restore-Backup
-  } elseif (-not $hadTarget -and (Test-Path -LiteralPath $target)) {
-    try {
-      Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
-    } catch {
-      Write-Warning "Fresh installation failed; partial target could not be removed from '$target': $($_.Exception.Message)"
-    }
-  } elseif ($hadTarget -and (Test-Path -LiteralPath $target)) {
-    Write-Warning "Update stopped before a backup was created; the original installation remains at '$target'."
-  }
-  throw
-}
-```
-
-To roll back a successful update later, remove the updated target only after confirming the unique backup still exists, then move that backup directory back to the target path and run `quick_validate.py` on the restored target.
-
-## Scope
-
-The payload preserves the established bridge workflow: Spec Kit is the durable planning layer, Superpowers supplies engineering discipline, Codex performs repository work, and Hermes remains an optional orchestration boundary. Review the skill and all upstream dependencies before using them in a project.
-
-## Arena Agent Mode
-
-Arena can use this bridge as **repository-local instructions**. This does not assume a global Arena skill installer or a special skill invocation mechanism. In Arena, ask the agent to install this bridge into the target repository; the agent can clone this repository, inspect it, and run the following from the clone (Python 3 required):
+The existing [Arena adaptation](arena/README.md) supports repository-local instructions without assuming a global skill installer. From a reviewed checkout of this repository, run with Python 3:
 
 ```bash
 python3 arena/install.py /absolute/path/to/target-repository
 ```
 
-Alternatively, when this repository is already checked out, run the same command from its root. The target must be the root of an existing Git working tree. The installer copies the skill into `.agents/skills/spec-kit-superpowers-bridge/` and adds a marked instruction to the target's `AGENTS.md`. It preserves existing instructions, is repeatable for the same version, and stops rather than overwriting a different installation or edited bridge block. The resulting files are project changes: review them and commit only if desired. The agent should read the installed `SKILL.md` and `references/arena.md` immediately after installation; future Arena sessions should follow the repository's `AGENTS.md` instructions.
+The target must be the root of an existing Git working tree. The installer copies the shared skill into `.agents/skills/spec-kit-superpowers-bridge/`, adds the Arena adaptation at the existing installed path `references/arena.md`, and adds a marked instruction to `AGENTS.md`. The adapter source remains outside the shared skill. Existing instructions are preserved; identical installations are repeatable; differing installations or edited bridge blocks require manual review. Installation does not install Spec Kit, Superpowers, or another agent application.
 
-To update, review and manually remove or replace the installed skill and marked `AGENTS.md` block before rerunning the installer; back up local changes first. To uninstall, remove that skill directory and only the block between `<!-- spec-kit-superpowers-bridge:arena:start -->` and `<!-- spec-kit-superpowers-bridge:arena:end -->` from `AGENTS.md` (delete the file only if it is otherwise empty).
+Read the installed `SKILL.md` and `references/arena.md` after installation. Future sessions follow the repository's `AGENTS.md`. Review the resulting project changes and commit only if desired.
 
-This installs only the bridge instructions, not Spec Kit, Superpowers, Codex, or Hermes. Arena uses available project tools or the equivalent engineering practices described in the adaptation. Spec Kit initialization and additional dependencies remain separate, permission-sensitive actions.
+## Updates and removal
+
+Back up the installed files and local changes before updating. Review a replacement checkout before replacing an existing shared skill. Use your environment's installation rules; do not assume its installer overwrites existing skills.
+
+For an Arena installation, review and manually remove or replace the installed skill and marked `AGENTS.md` block before rerunning the installer. To uninstall, remove `.agents/skills/spec-kit-superpowers-bridge/` and only the block between `<!-- spec-kit-superpowers-bridge:arena:start -->` and `<!-- spec-kit-superpowers-bridge:arena:end -->` in `AGENTS.md`. Delete `AGENTS.md` only if otherwise empty. Restore your backup to roll back an update.
+
+## Verification
+
+Run the Arena installer tests from the repository root:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+These tests verify packaging and installation behavior. They do not establish that an agent will always follow the workflow. The shared skill can also be checked with a compatible skill validator available in your environment.
+
+See [LICENSE](LICENSE) for licensing and upstream attribution.
