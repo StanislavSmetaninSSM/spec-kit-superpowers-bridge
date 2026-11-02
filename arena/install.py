@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parent.parent / 'spec-kit-superpowers-bridge'
+ADAPTER = Path(__file__).resolve().parent / 'README.md'
 START = '<!-- spec-kit-superpowers-bridge:arena:start -->'
 END = '<!-- spec-kit-superpowers-bridge:arena:end -->'
 BLOCK = f'''{START}
@@ -18,10 +19,11 @@ When a task involves Spec Kit, Superpowers, `.specify/`, or a durable feature wo
 def same_tree(source, target):
     if not target.is_dir() or target.is_symlink():
         return False
-    files = [p for p in source.rglob('*') if p.is_file()]
-    return all((target / p.relative_to(source)).is_file() and
-               not (target / p.relative_to(source)).is_symlink() and
-               p.read_bytes() == (target / p.relative_to(source)).read_bytes() for p in files)
+    files = [(p, p.relative_to(source)) for p in source.rglob('*') if p.is_file()]
+    files.append((ADAPTER, Path('references/arena.md')))
+    return all((target / relative).is_file() and
+               not (target / relative).is_symlink() and
+               path.read_bytes() == (target / relative).read_bytes() for path, relative in files)
 
 
 def install(repo):
@@ -32,6 +34,8 @@ def install(repo):
     agents = repo / 'AGENTS.md'
     if any(p.is_symlink() for p in (repo / '.agents', repo / '.agents' / 'skills', target, agents)):
         raise ValueError('Refusing to install through a symlink in the destination path.')
+    if not ADAPTER.is_file():
+        raise ValueError(f'Arena adaptation not found: {ADAPTER}')
     if target.exists() and not same_tree(SOURCE, target):
         raise ValueError(f'Existing skill differs; review it before updating: {target}')
     text = agents.read_text(encoding='utf-8') if agents.exists() else ''
@@ -47,6 +51,8 @@ def install(repo):
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(SOURCE, target)
+        (target / 'references').mkdir(exist_ok=True)
+        shutil.copy2(ADAPTER, target / 'references' / 'arena.md')
     if updated != text:
         agents.write_text(updated, encoding='utf-8')
     print(f'Arena bridge installed in {repo}. Review AGENTS.md and .agents/skills; commit them if desired.')
